@@ -1,12 +1,4 @@
-import {
-  dirname,
-  extname,
-  fromFileUrl,
-  gte,
-  join,
-  toFileUrl,
-  walk,
-} from "./deps.ts";
+import { dirname, extname, fromFileUrl, gte, join, walk } from "./deps.ts";
 import { error } from "./error.ts";
 
 const MIN_DENO_VERSION = "1.25.0";
@@ -39,7 +31,6 @@ export async function collect(directory: string): Promise<Manifest> {
 
   const routes = [];
   try {
-    const routesUrl = toFileUrl(routesDir);
     // TODO(lucacasonato): remove the extranious Deno.readDir when
     // https://github.com/denoland/deno_std/issues/1310 is fixed.
     for await (const _ of Deno.readDir(routesDir)) {
@@ -52,9 +43,8 @@ export async function collect(directory: string): Promise<Manifest> {
     });
     for await (const entry of routesFolder) {
       if (entry.isFile) {
-        const file = toFileUrl(entry.path).href.substring(
-          routesUrl.href.length,
-        );
+        const file = entry.path.substring(entry.path.lastIndexOf("routes"))
+          .substring("routes".length);
         routes.push(file);
       }
     }
@@ -69,7 +59,6 @@ export async function collect(directory: string): Promise<Manifest> {
 
   const islands = [];
   try {
-    const islandsUrl = toFileUrl(islandsDir);
     for await (const entry of Deno.readDir(islandsDir)) {
       if (entry.isDirectory) {
         error(
@@ -80,7 +69,9 @@ export async function collect(directory: string): Promise<Manifest> {
         const ext = extname(entry.name);
         if (![".tsx", ".jsx", ".ts", ".js"].includes(ext)) continue;
         const path = join(islandsDir, entry.name);
-        const file = toFileUrl(path).href.substring(islandsUrl.href.length);
+        const file = path.substring(path.lastIndexOf("islands")).substring(
+          "islands".length,
+        );
         islands.push(file);
       }
     }
@@ -134,27 +125,35 @@ const manifest = {
 export default manifest;
 `;
 
-  const proc = Deno.run({
-    cmd: [Deno.execPath(), "fmt", "-"],
-    stdin: "piped",
-    stdout: "piped",
-    stderr: "null",
-  });
-  const raw = new ReadableStream({
-    start(controller) {
-      controller.enqueue(new TextEncoder().encode(output));
-      controller.close();
-    },
-  });
-  await raw.pipeTo(proc.stdin.writable);
-  const out = await proc.output();
-  await proc.status();
-  proc.close();
-
-  const manifestStr = new TextDecoder().decode(out);
   const manifestPath = join(directory, "./fresh.gen.ts");
+  try {
+    const proc = Deno.run({
+      cmd: [Deno.execPath(), "fmt", "-"],
+      stdin: "piped",
+      stdout: "piped",
+      stderr: "null",
+    });
+    const raw = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(output));
+        controller.close();
+      },
+    });
+    await raw.pipeTo(proc.stdin.writable);
+    const out = await proc.output();
+    await proc.status();
+    proc.close();
 
-  await Deno.writeTextFile(manifestPath, manifestStr);
+    const manifestStr = new TextDecoder().decode(out);
+
+    await Deno.writeTextFile(manifestPath, manifestStr);
+  } catch (err) {
+    if (!(err instanceof Deno.errors.PermissionDenied)) throw err;
+    await Deno.writeTextFile(manifestPath, output);
+    console.warn(
+      "The manifest file has not been formatted because of missing permissions.",
+    );
+  }
   console.log(
     `%cThe manifest has been generated for ${routes.length} routes and ${islands.length} islands.`,
     "color: blue; font-weight: bold",
@@ -169,21 +168,27 @@ export async function dev(base: string, entrypoint: string) {
   const dir = dirname(fromFileUrl(base));
 
   let currentManifest: Manifest;
-  const prevManifest = Deno.env.get("FRSH_DEV_PREVIOUS_MANIFEST");
-  if (prevManifest) {
-    currentManifest = JSON.parse(prevManifest);
-  } else {
+  try {
+    const prevManifest = Deno.env.get("FRSH_DEV_PREVIOUS_MANIFEST");
+    if (prevManifest) {
+      currentManifest = JSON.parse(prevManifest);
+    } else throw new Deno.errors.PermissionDenied();
+  } catch (err) {
+    if (!(err instanceof Deno.errors.PermissionDenied)) throw err;
     currentManifest = { islands: [], routes: [] };
   }
   const newManifest = await collect(dir);
-  Deno.env.set("FRSH_DEV_PREVIOUS_MANIFEST", JSON.stringify(newManifest));
+  try {
+    Deno.env.set("FRSH_DEV_PREVIOUS_MANIFEST", JSON.stringify(newManifest));
+  } catch (err) {
+    if (!(err instanceof Deno.errors.PermissionDenied)) throw err;
+  }
 
   const manifestChanged =
     !arraysEqual(newManifest.routes, currentManifest.routes) ||
     !arraysEqual(newManifest.islands, currentManifest.islands);
 
   if (manifestChanged) await generate(dir, newManifest);
-
   await import(entrypoint);
 }
 

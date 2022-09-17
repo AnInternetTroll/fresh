@@ -11,7 +11,11 @@ export interface JSXConfig {
 let esbuildInitialized: boolean | Promise<void> = false;
 async function ensureEsbuildInitialized() {
   if (esbuildInitialized === false) {
-    if (Deno.run === undefined) {
+    if (
+      await Deno.permissions.query({ name: "run" }).then((res) =>
+        res.state !== "granted"
+      )
+    ) {
       esbuildInitialized = esbuild.initialize({
         wasmURL: "https://deno.land/x/esbuild@v0.14.51/esbuild.wasm",
         worker: false,
