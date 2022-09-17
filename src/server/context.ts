@@ -86,7 +86,12 @@ export class ServerContext {
     this.#notFound = notFound;
     this.#error = error;
     this.#plugins = plugins;
-    this.#dev = typeof Deno.env.get("DENO_DEPLOYMENT_ID") !== "string"; // Env var is only set in prod (on Deploy).
+    try {
+      this.#dev = typeof Deno.env.get("DENO_DEPLOYMENT_ID") !== "string"; // Env var is only set in prod (on Deploy).
+    } catch (err) {
+      if (!(err instanceof Deno.errors.PermissionDenied)) throw err;
+      this.#dev = true;
+    }
     this.#bundler = new Bundler(
       this.#islands,
       this.#plugins,

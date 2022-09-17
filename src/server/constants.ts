@@ -2,10 +2,21 @@ import { INTERNAL_PREFIX } from "../runtime/utils.ts";
 
 export const REFRESH_JS_URL = `${INTERNAL_PREFIX}/refresh.js`;
 export const ALIVE_URL = `${INTERNAL_PREFIX}/alive`;
-export const BUILD_ID = Deno.env.get("DENO_DEPLOYMENT_ID") ||
-  crypto.randomUUID();
+let buildIdTmp = crypto.randomUUID();
+try {
+  buildIdTmp = Deno.env.get("DENO_DEPLOYMENT_ID") || buildIdTmp;
+} catch (err) {
+  if (!(err instanceof Deno.errors.PermissionDenied)) throw err;
+}
+export const BUILD_ID = buildIdTmp;
 export const JS_PREFIX = `/js`;
-export const DEBUG = !Deno.env.get("DENO_DEPLOYMENT_ID");
+let debug = true;
+try {
+  debug = !Deno.env.get("DENO_DEPLOYMENT_ID");
+} catch (err) {
+  if (!(err instanceof Deno.errors.PermissionDenied)) throw err;
+}
+export const DEBUG = debug;
 
 export function bundleAssetUrl(path: string) {
   return `${INTERNAL_PREFIX}${JS_PREFIX}/${BUILD_ID}${path}`;
