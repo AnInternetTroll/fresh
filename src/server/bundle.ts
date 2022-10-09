@@ -17,11 +17,11 @@ async function ensureEsbuildInitialized() {
       )
     ) {
       esbuildInitialized = esbuild.initialize({
-        wasmURL: "https://deno.land/x/esbuild@v0.14.51/esbuild.wasm",
+        wasmURL: "https://deno.land/x/esbuild@v0.15.10/esbuild.wasm",
         worker: false,
       });
     } else {
-      esbuild.initialize({});
+      esbuildInitialized = esbuild.initialize({});
     }
     await esbuildInitialized;
     esbuildInitialized = true;
